@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "advent-of-code-2023"
+version = "0.1.0"
+description = ""
+authors = ["William Martin <will.st4@gmail.com>"]
+readme = "README.md"
+packages = [{include = "advent_of_code_2023"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+pyfunctional = "^1.4.3"
+numpy = "^1.26.2"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
