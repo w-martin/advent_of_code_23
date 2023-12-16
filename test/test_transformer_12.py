@@ -1,6 +1,6 @@
 import sys
 from pathlib import Path
-from unittest import TestCase, skip
+from unittest import TestCase
 
 import numpy
 
