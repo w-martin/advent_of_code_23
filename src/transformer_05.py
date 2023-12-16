@@ -1,5 +1,6 @@
 import re
 import sys
+from collections import deque
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
@@ -11,7 +12,7 @@ from transformer import Transformer
 
 
 @dataclass
-class Range:
+class RangeMapping:
     source: int
     dest: int
     span: int
@@ -21,7 +22,13 @@ class Range:
 class Map:
     source: str
     dest: str
-    ranges: list[Range] = field(default_factory=list)
+    ranges: list[RangeMapping] = field(default_factory=list)
+
+
+@dataclass
+class Range:
+    start: int
+    span: int
 
 
 class TransformerImpl(Transformer):
@@ -38,7 +45,7 @@ class TransformerImpl(Transformer):
                 numbers = seq(match.group(1).split()).map(int).to_list()
                 source = numbers[1]
                 dest = numbers[0]
-                maps[-1].ranges.append(Range(source=source, dest=dest, span=numbers[2]))
+                maps[-1].ranges.append(RangeMapping(source=source, dest=dest, span=numbers[2]))
         starting_locations = seq(seeds).map(partial(self._get_location, maps, "seed"))
         return min(starting_locations)
 
@@ -66,10 +73,10 @@ class TransformerImpl(Transformer):
             new_ranges = []
             for r in ranges:
                 if r.source > value:
-                    new_ranges.append(Range(source=value, dest=value, span=r.source - value))
+                    new_ranges.append(RangeMapping(source=value, dest=value, span=r.source - value))
                 new_ranges.append(r)
                 value = r.source + r.span
-            new_ranges.append(Range(source=value, dest=value, span=max_value - value))
+            new_ranges.append(RangeMapping(source=value, dest=value, span=max_value - value))
             m.ranges = seq(m.ranges + new_ranges).sorted(key=lambda r: r.source).to_list()
 
     def _get_locations(self, maps, source, value, span):
@@ -106,58 +113,56 @@ class TransformerImpl(Transformer):
                 numbers = seq(match.group(1).split()).map(int).to_list()
                 source = numbers[1]
                 dest = numbers[0]
-                maps[-1].ranges.append(Range(source=source, dest=dest, span=numbers[2]))
+                maps[-1].ranges.append(RangeMapping(source=source, dest=dest, span=numbers[2]))
         self._fill_missing_ranges(maps)
-        location = -1
-        while True:
-            location += 1
-            seed = self._backtrack(maps, "location", location)
-            if seed is not None and self._in_initial_seeds(seeds, seed):
-                return location
-            if location % 10_000_000 == 0:
-                print(f"Part 2 not found at {location}")
+        return self._solve_2(seeds, maps)
 
-    def _backtrack(self, maps, source, value):
-        if source == "seed":
-            return value
-        m = self._get_map_reversed(maps, source)
-        r = self._get_range_reversed(m.ranges, value)
-        if r is None:
-            return None
-        else:
-            return self._backtrack(maps, m.source, value - r.dest + r.source)
+    def _solve_2(self, seeds: list[int], maps: list[Map]) -> int:
+        next_queue = deque(
+            (seeds[i], seeds[i], seeds[i + 1],)
+            for i in range(0, len(seeds), 2)
+        )
+        current_type = "seed"
+        while current_type != "location":
+            target_map = self._get_map(maps, current_type)
+            current_type = target_map.dest
+            this_queue = next_queue
+            next_queue = deque()
 
-    def _in_initial_seeds(self, seeds, value):
-        for i in range(int(len(seeds) / 2)):
-            index = i * 2
-            start = seeds[index]
-            span = seeds[1 + index]
-            if start <= value < start + span:
-                return True
-        return False
+            while len(this_queue):
+                this_range = this_queue.popleft()
+                seed_start, this_start, span = this_range
+                this_end = this_start + span
+                target_range = self._get_range(target_map.ranges, this_start)
+                target_end = target_range.source + target_range.span
+                if target_range.source <= this_start < target_end:
+                    start_diff = this_start - target_range.source
+                    end_diff = target_end - this_end
+                    if end_diff >= 0:
+                        next_queue.append(
+                            (seed_start, target_range.dest + start_diff, span)
+                        )
+                    else:
+                        next_span = span + end_diff
+                        next_queue.append(
+                            (seed_start, target_range.dest + start_diff, next_span)
+                        )
+                        this_queue.append(
+                            (seed_start + next_span, this_start + next_span, -end_diff)
+                        )
+
+        result = min(next_queue, key=lambda i: i[1])[1]
+        return result
 
     def _get_map(self, maps, source):
         for m in maps:
             if m.source == source:
                 return m
 
-    def _get_map_reversed(self, maps, source):
-        for m in maps:
-            if m.dest == source:
-                return m
-
     def _get_range(self, ranges, value):
         for r in ranges:
             start = r.source
             stop = r.source + r.span
-            if start <= value < stop:
-                return r
-        return None
-
-    def _get_range_reversed(self, ranges, value):
-        for r in ranges:
-            start = r.dest
-            stop = r.dest + r.span
             if start <= value < stop:
                 return r
         return None
